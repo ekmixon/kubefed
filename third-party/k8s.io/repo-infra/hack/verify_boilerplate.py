@@ -63,11 +63,8 @@ def get_refs():
     for path in glob.glob(os.path.join(template_dir, "boilerplate.*.txt")):
         extension = os.path.basename(path).split(".")[1]
 
-        # Pass the encoding parameter to avoid ascii decode error for some
-        # platform.
-        ref_file = open(path, 'r', encoding='utf-8')
-        ref = ref_file.read().splitlines()
-        ref_file.close()
+        with open(path, 'r', encoding='utf-8') as ref_file:
+            ref = ref_file.read().splitlines()
         refs[extension] = ref
 
     return refs
@@ -86,10 +83,7 @@ GENERATED_GO_MARKERS = [
 
 
 def is_generated(data):
-    for marker in GENERATED_GO_MARKERS:
-        if marker in data:
-            return True
-    return False
+    return any(marker in data for marker in GENERATED_GO_MARKERS)
 
 
 def file_passes(filename, refs, regexs):  # pylint: disable=too-many-locals
@@ -106,11 +100,7 @@ def file_passes(filename, refs, regexs):  # pylint: disable=too-many-locals
 
     basename = os.path.basename(filename)
     extension = file_extension(filename)
-    if extension != "":
-        ref = refs[extension]
-    else:
-        ref = refs[basename]
-
+    ref = refs[extension] if extension != "" else refs[basename]
     # check for and skip generated files
     if is_generated(data):
         return True
@@ -147,10 +137,7 @@ def file_passes(filename, refs, regexs):  # pylint: disable=too-many-locals
             break
 
     # if we don't match the reference at this point, fail
-    if ref != data:
-        return False
-
-    return True
+    return ref == data
 
 
 def file_extension(filename):
@@ -176,11 +163,12 @@ def has_ignored_header(pathname):
 
 
 def normalize_files(files):
-    newfiles = []
-    for pathname in files:
-        if any(x in pathname for x in ARGS.skip):
-            continue
-        newfiles.append(pathname)
+    newfiles = [
+        pathname
+        for pathname in files
+        if all(x not in pathname for x in ARGS.skip)
+    ]
+
     for idx, pathname in enumerate(newfiles):
         if not os.path.isabs(pathname):
             newfiles[idx] = os.path.join(ARGS.rootdir, pathname)
@@ -210,21 +198,20 @@ def get_files(extensions):
     for pathname in files:
         basename = os.path.basename(pathname)
         extension = file_extension(pathname)
-        if extension in extensions or basename in extensions:
-            if not has_ignored_header(pathname):
-                outfiles.append(pathname)
+        if (
+            extension in extensions or basename in extensions
+        ) and not has_ignored_header(pathname):
+            outfiles.append(pathname)
     return outfiles
 
 
 def get_dates():
     years = datetime.datetime.now().year
-    return '(%s)' % '|'.join((str(year) for year in range(2014, years + 1)))
+    return f"({'|'.join((str(year) for year in range(2014, years + 1)))})"
 
 
 def get_regexs():
-    regexs = {}
-    # Search for "YEAR" which exists in the boilerplate, but shouldn't in the real thing
-    regexs["year"] = re.compile('YEAR')
+    regexs = {"year": re.compile('YEAR')}
     # dates can be any year between 2014 and the current year, company holder names can be anything
     regexs["date"] = re.compile(get_dates())
     # strip // +build \n\n build constraints
@@ -245,12 +232,11 @@ def main():
     regexs = get_regexs()
     refs = get_refs()
     filenames = get_files(refs.keys())
-    nonconforming_files = []
-    for filename in sorted(filenames):
-        if not file_passes(filename, refs, regexs):
-            nonconforming_files.append(filename)
-
-    if nonconforming_files:
+    if nonconforming_files := [
+        filename
+        for filename in sorted(filenames)
+        if not file_passes(filename, refs, regexs)
+    ]:
         for line in nonconforming_lines(nonconforming_files):
           print(line)
         sys.exit(1)

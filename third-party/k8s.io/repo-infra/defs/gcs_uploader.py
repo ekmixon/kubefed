@@ -78,7 +78,7 @@ def main(argv):
 
         uploaded_paths.append(gcs_path)
 
-    print("Uploaded to %s" % " ".join(uploaded_paths))
+    print(f'Uploaded to {" ".join(uploaded_paths)}')
     sys.exit(ret)
 
 
